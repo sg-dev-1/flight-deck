@@ -1,6 +1,4 @@
 ﻿using FlightDeck.Models;
-using Serilog;
-using System;
 using System.Collections.Concurrent;
 
 namespace FlightDeck.Services
@@ -9,10 +7,12 @@ namespace FlightDeck.Services
     {
         private readonly ConcurrentDictionary<Guid, Flight> _flights = new ConcurrentDictionary<Guid, Flight>();
         private static readonly Random _random = new Random();
+        private readonly ILogger<InMemoryFlightRepository> _logger;
 
-        public InMemoryFlightRepository()
+        public InMemoryFlightRepository(ILogger<InMemoryFlightRepository> logger)
         {
-            AddDummyData(50);
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            AddDummyData(50); // Add dummy data on creation
         }
 
         private void AddDummyData(int numberOfFlights)
@@ -29,11 +29,10 @@ namespace FlightDeck.Services
             for (int i = 0; i < numberOfFlights; i++)
             {
                 var airlineCode = airlines[_random.Next(airlines.Count)];
-                var flightNumber = $"{airlineCode}{1000 + i}"; // Ensure unique flight numbers for this set
+                var flightNumber = $"{airlineCode}{1000 + i}";
                 var destination = destinations[_random.Next(destinations.Count)];
-                // Generate times around now: -2 hours to +6 hours
                 var departureTime = now.AddMinutes(_random.Next(-120, 360));
-                var gate = $"{(char)('A' + _random.Next(6))}{_random.Next(1, 21)}"; // Gate A1 to F20
+                var gate = $"{(char)('A' + _random.Next(6))}{_random.Next(1, 21)}";
 
                 var flight = new Flight
                 {
@@ -43,27 +42,47 @@ namespace FlightDeck.Services
                     DepartureTime = departureTime,
                     Gate = gate
                 };
-
                 _flights.TryAdd(flight.Id, flight);
             }
-            Log.Information("Added {Count} dummy flights to in-memory repository.", _flights.Count);
+            _logger.LogInformation("Added {Count} dummy flights to in-memory repository.", _flights.Count);
         }
 
         public Task<IEnumerable<Flight>> GetAllFlightsAsync(string? destination, string? status)
         {
-            IEnumerable<Flight> result = _flights.Values;
+            _logger.LogInformation("GetAllFlightsAsync called. Destination filter: '{Destination}', Status filter: '{Status}'", destination ?? "None", status ?? "None");
+
+            IEnumerable<Flight> query = _flights.Values;
+            _logger.LogDebug("Initial flight count: {Count}", query.Count());
 
             if (!string.IsNullOrWhiteSpace(destination))
             {
-                result = result.Where(f => f.Destination.Contains(destination, StringComparison.OrdinalIgnoreCase));
+                query = query.Where(f => f.Destination.Contains(destination, StringComparison.OrdinalIgnoreCase));
+                _logger.LogDebug("Flight count after destination filter: {Count}", query.Count());
             }
 
             if (!string.IsNullOrWhiteSpace(status))
             {
-                result = result.Where(f => f.Status.Equals(status, StringComparison.OrdinalIgnoreCase));
+                _logger.LogDebug("Applying status filter for: '{Status}'", status);
+                foreach (var flight in query)
+                {
+                    _logger.LogTrace("Checking Flight {FlightId} - Departure: {DepartureTime} - Calculated Status: {CalculatedStatus}",
+                                    flight.Id, flight.DepartureTime, flight.Status);
+                }
+
+                query = query.Where(f => {
+                    bool match = f.Status.Equals(status, StringComparison.OrdinalIgnoreCase);
+                    _logger.LogTrace("Flight {FlightId} ({CalculatedStatus}) Match '{StatusFilter}'? -> {MatchResult}",
+                                     f.Id, f.Status, status, match);
+                    return match;
+                });
+
+                _logger.LogDebug("Flight count after status filter: {Count}", query.Count());
             }
 
-            return Task.FromResult(result.OrderBy(f => f.DepartureTime).ToList().AsEnumerable());
+            var result = query.OrderBy(f => f.DepartureTime).ToList();
+            _logger.LogInformation("Returning {Count} flights after filtering and ordering.", result.Count);
+
+            return Task.FromResult(result.AsEnumerable());
         }
 
         public Task<Flight?> GetFlightByIdAsync(Guid id)
@@ -81,19 +100,9 @@ namespace FlightDeck.Services
 
         public Task<Flight> AddFlightAsync(Flight flight)
         {
-            if (flight.Id == Guid.Empty)
-            {
-                flight.Id = Guid.NewGuid();
-            }
-
-            if (_flights.TryAdd(flight.Id, flight))
-            {
-                return Task.FromResult(flight);
-            }
-            else
-            {
-                throw new InvalidOperationException($"Failed to add flight. A flight with ID {flight.Id} might already exist.");
-            }
+            if (flight.Id == Guid.Empty) { flight.Id = Guid.NewGuid(); }
+            if (_flights.TryAdd(flight.Id, flight)) { return Task.FromResult(flight); }
+            else { throw new InvalidOperationException($"Failed to add flight. A flight with ID {flight.Id} might already exist."); }
         }
 
         public Task<bool> DeleteFlightAsync(Guid id)
