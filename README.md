@@ -48,5 +48,3 @@ The following endpoints are available:
 curl -X GET "http://localhost:5177/api/flights" -H "accept: application/json"
 2. Get Filtered Flights (by Status):curl -X GET "http://localhost:5177/api/flights?status=Scheduled" -H "accept: application/json"
 3. Add a New Flight:curl -X POST "http://localhost:5177/api/flights" -H "accept: application/json" -H "Content-Type: application/json" -d "{\"flightNumber\":\"AA100\",\"destination\":\"New York\",\"departureTime\":\"2025-12-01T10:00:00Z\",\"gate\":\"B5\"}"
-(Ensure departureTime is in the future and in a format your API expects, likely ISO 8601 UTC 'Z')4. Delete a Flight (replace {guid} with an actual ID):curl -X DELETE "http://localhost:5177/api/flights/{guid}" -H "accept: */*"
-Third-Party Libraries UsedSerilog.AspNetCore - Logging integration.Serilog.Sinks.File - Logging to files.Swashbuckle.AspNetCore - Swagger/OpenAPI generation and UI.Microsoft.AspNetCore.SignalR - Real-
