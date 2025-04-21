@@ -59,8 +59,6 @@ The following endpoints are available:
 
 ## Example API Requests (cURL)
 
-*(Replace `http://localhost:5177` if your application runs on a different port. Replace placeholder GUIDs like `{guid}` with actual IDs.)*
-
 **1. Get All Flights:**
 
 ```bash
