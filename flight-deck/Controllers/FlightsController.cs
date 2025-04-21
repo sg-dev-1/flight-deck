@@ -28,13 +28,12 @@ namespace FlightDeck.Controllers
         [HttpGet]
         [ProducesResponseType(StatusCodes.Status200OK)]
         public async Task<ActionResult<IEnumerable<Flight>>> GetFlights(
-            [FromQuery] string? destination,
-            [FromQuery] string? status)
+            [FromQuery] string? destination)
         {
-            _logger.LogInformation("Getting flights with filter Destination={Destination}, Status={Status}", destination, status);
+            _logger.LogInformation("Getting flights with filter Destination={Destination}", destination);
             try
             {
-                var flights = await _flightRepository.GetAllFlightsAsync(destination, status);
+                var flights = await _flightRepository.GetAllFlightsAsync(destination);
                 return Ok(flights);
             }
             catch (Exception ex)
