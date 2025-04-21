@@ -67,14 +67,17 @@ namespace FlightDeck.Controllers
         [ProducesResponseType(StatusCodes.Status201Created)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status409Conflict)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<Flight>> AddFlight([FromBody] CreateFlightRequest request)
         {
             _logger.LogInformation("Attempting to add flight: {FlightNumber}", request.FlightNumber);
 
+            // --- Pre-checks remain the same ---
             if (!ModelState.IsValid) { return BadRequest(ModelState); }
             if (request.DepartureTime <= DateTime.UtcNow) { ModelState.AddModelError(nameof(request.DepartureTime), "Departure time must be in the future."); return BadRequest(ModelState); }
             var existingFlight = await _flightRepository.GetFlightByNumberAsync(request.FlightNumber);
             if (existingFlight != null) { ModelState.AddModelError(nameof(request.FlightNumber), $"Flight number {request.FlightNumber} already exists."); return Conflict(ModelState); }
+            // --- End of Pre-checks ---
 
             try
             {
@@ -88,6 +91,13 @@ namespace FlightDeck.Controllers
                 };
 
                 var addedFlight = await _flightRepository.AddFlightAsync(newFlight);
+
+                if (addedFlight == null)
+                {
+                    _logger.LogError("Repository failed to add flight {FlightNumber} unexpectedly after controller checks passed.", request.FlightNumber);
+                    return StatusCode(StatusCodes.Status500InternalServerError, "An unexpected internal error occurred while saving the flight.");
+                }
+
                 _logger.LogInformation("Flight added successfully with ID: {Id}", addedFlight.Id);
 
                 await _hubContext.Clients.All.SendAsync("FlightAdded", addedFlight);
@@ -97,20 +107,22 @@ namespace FlightDeck.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error occurred while adding flight or sending SignalR message for: {FlightNumber}", request.FlightNumber);
-                return StatusCode(StatusCodes.Status500InternalServerError, "An unexpected error occurred while processing your request.");
+                _logger.LogError(ex, "An unexpected exception occurred while processing AddFlight request for: {FlightNumber}", request.FlightNumber);
+                return StatusCode(StatusCodes.Status500InternalServerError, "An unexpected error occurred.");
             }
         }
 
         [HttpDelete("{id}")]
         [ProducesResponseType(StatusCodes.Status204NoContent)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<IActionResult> DeleteFlight(Guid id)
         {
             _logger.LogInformation("Attempting to delete flight with ID: {Id}", id);
             try
             {
                 var flightToDelete = await _flightRepository.GetFlightByIdAsync(id);
+
                 if (flightToDelete == null)
                 {
                     _logger.LogWarning("Delete flight failed: Flight with ID {Id} not found.", id);
@@ -122,20 +134,20 @@ namespace FlightDeck.Controllers
                 if (!success)
                 {
                     _logger.LogError("Delete flight failed unexpectedly after confirming existence for ID: {Id}", id);
-                    return StatusCode(StatusCodes.Status500InternalServerError, "An error occurred while deleting the flight.");
+                    return StatusCode(StatusCodes.Status500InternalServerError, "An error occurred while deleting the flight from the repository.");
                 }
 
-                _logger.LogInformation("Flight with ID: {Id} deleted successfully.", id);
+                _logger.LogInformation("Flight with ID: {Id} ({FlightNumber}) deleted successfully.", id, flightToDelete.FlightNumber);
 
-                await _hubContext.Clients.All.SendAsync("FlightDeleted", id);
-                _logger.LogInformation("Sent SignalR 'FlightDeleted' message for ID: {Id}", id);
+                await _hubContext.Clients.All.SendAsync("FlightDeleted", flightToDelete);
+                _logger.LogInformation("Sent SignalR 'FlightDeleted' message for ID: {Id} ({FlightNumber})", id, flightToDelete.FlightNumber);
 
                 return NoContent();
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error occurred while deleting flight with ID: {Id}", id);
-                return StatusCode(StatusCodes.Status500InternalServerError, "An error occurred while processing your request.");
+                _logger.LogError(ex, "Error occurred during delete operation for flight ID: {Id}", id);
+                return StatusCode(StatusCodes.Status500InternalServerError, "An unexpected error occurred while processing your delete request.");
             }
         }
     }
