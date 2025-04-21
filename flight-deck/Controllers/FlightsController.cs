@@ -1,7 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using FlightDeck.Models;
 using FlightDeck.Models.DTOs;
-using FlightDeck.Services;
+using FlightDeck.IServices;
 using Microsoft.AspNetCore.SignalR;
 using FlightDeck.Hubs;
 

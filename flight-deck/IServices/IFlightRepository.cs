@@ -1,6 +1,6 @@
 ﻿using FlightDeck.Models;
 
-namespace FlightDeck.Services
+namespace FlightDeck.IServices
 {
     public interface IFlightRepository
     {
