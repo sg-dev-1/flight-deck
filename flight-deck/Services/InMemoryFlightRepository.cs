@@ -60,19 +60,18 @@ namespace FlightDeck.Services
                 _logger.LogDebug("Flight count after destination filter: {Count}", query.Count());
             }
 
+            // --- Status Filtering Logic ---
             if (!string.IsNullOrWhiteSpace(status))
             {
                 _logger.LogDebug("Applying status filter for: '{Status}'", status);
-                foreach (var flight in query)
-                {
-                    _logger.LogTrace("Checking Flight {FlightId} - Departure: {DepartureTime} - Calculated Status: {CalculatedStatus}",
-                                    flight.Id, flight.DepartureTime, flight.Status);
-                }
+                var now = DateTime.UtcNow;
 
                 query = query.Where(f => {
-                    bool match = f.Status.Equals(status, StringComparison.OrdinalIgnoreCase);
+                    string calculatedStatus = GetPotentialFlightStatus(f.DepartureTime, now);
+                    bool match = calculatedStatus.Equals(status, StringComparison.OrdinalIgnoreCase);
+
                     _logger.LogTrace("Flight {FlightId} ({CalculatedStatus}) Match '{StatusFilter}'? -> {MatchResult}",
-                                     f.Id, f.Status, status, match);
+                                     f.Id, calculatedStatus, status, match);
                     return match;
                 });
 
@@ -83,6 +82,38 @@ namespace FlightDeck.Services
             _logger.LogInformation("Returning {Count} flights after filtering and ordering.", result.Count);
 
             return Task.FromResult(result.AsEnumerable());
+        }
+
+        public static string GetPotentialFlightStatus(DateTime departureTime, DateTime currentTime)
+        {
+            TimeSpan diff = departureTime - currentTime;
+            double diffMinutes = diff.TotalMinutes;
+            string status = "Scheduled";
+
+            if (diffMinutes > 30)
+            {
+                status = "Scheduled";
+            }
+            else if (diffMinutes > 10)
+            {
+                status = "Boarding";
+            }
+            else if (diffMinutes >= -60)
+            {
+                status = "Departed";
+            }
+
+            if (diffMinutes < -15)
+            {
+                status = "Delayed";
+            }
+
+            if (diffMinutes < -60)
+            {
+                status = "Landed";
+            }
+
+            return status;
         }
 
         public Task<Flight?> GetFlightByIdAsync(Guid id)
@@ -98,16 +129,34 @@ namespace FlightDeck.Services
             return Task.FromResult(flight);
         }
 
-        public Task<Flight> AddFlightAsync(Flight flight)
+        public Task<Flight?> AddFlightAsync(Flight flight)
         {
             if (flight.Id == Guid.Empty) { flight.Id = Guid.NewGuid(); }
-            if (_flights.TryAdd(flight.Id, flight)) { return Task.FromResult(flight); }
-            else { throw new InvalidOperationException($"Failed to add flight. A flight with ID {flight.Id} might already exist."); }
+
+            if (_flights.TryAdd(flight.Id, flight))
+            {
+                _logger.LogInformation("Flight {FlightNumber} ({Id}) added to repository.", flight.FlightNumber, flight.Id);
+                return Task.FromResult<Flight?>(flight);
+            }
+            else
+            {
+                _logger.LogWarning("Failed to add flight {FlightNumber} ({Id}) to ConcurrentDictionary. This might indicate a concurrency issue or duplicate Guid if checks failed.", flight.FlightNumber, flight.Id);
+                return Task.FromResult<Flight?>(null);
+            }
         }
 
         public Task<bool> DeleteFlightAsync(Guid id)
         {
-            return Task.FromResult(_flights.TryRemove(id, out _));
+            var removed = _flights.TryRemove(id, out _);
+            if (removed)
+            {
+                _logger.LogInformation("Flight with ID {Id} removed from repository.", id);
+            }
+            else
+            {
+                _logger.LogWarning("Attempted to remove flight with ID {Id}, but it was not found in the repository.", id);
+            }
+            return Task.FromResult(removed);
         }
     }
 }
