@@ -60,7 +60,6 @@ namespace FlightDeck.Services
                 _logger.LogDebug("Flight count after destination filter: {Count}", query.Count());
             }
 
-            // --- Status Filtering Logic ---
             if (!string.IsNullOrWhiteSpace(status))
             {
                 _logger.LogDebug("Applying status filter for: '{Status}'", status);

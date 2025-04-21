@@ -72,12 +72,10 @@ namespace FlightDeck.Controllers
         {
             _logger.LogInformation("Attempting to add flight: {FlightNumber}", request.FlightNumber);
 
-            // --- Pre-checks remain the same ---
             if (!ModelState.IsValid) { return BadRequest(ModelState); }
             if (request.DepartureTime <= DateTime.UtcNow) { ModelState.AddModelError(nameof(request.DepartureTime), "Departure time must be in the future."); return BadRequest(ModelState); }
             var existingFlight = await _flightRepository.GetFlightByNumberAsync(request.FlightNumber);
             if (existingFlight != null) { ModelState.AddModelError(nameof(request.FlightNumber), $"Flight number {request.FlightNumber} already exists."); return Conflict(ModelState); }
-            // --- End of Pre-checks ---
 
             try
             {
