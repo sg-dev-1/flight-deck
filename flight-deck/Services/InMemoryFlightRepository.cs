@@ -13,16 +13,17 @@ namespace FlightDeck.Services
         public InMemoryFlightRepository(ILogger<InMemoryFlightRepository> logger)
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-            AddDummyData(120); // Add dummy data on creation
+            AddDummyData(); // Add dummy data on creation
         }
 
-        private void AddDummyData(int totalNumberOfFlights)
+        private void AddDummyData()
         {
-            _logger.LogInformation("Generating {Count} specific dummy flights...", totalNumberOfFlights);
-            _flights.Clear();
+            _logger.LogInformation("Generating 5 specific dummy flights timed for status changes in the next ~60 seconds...");
+            _flights.Clear(); // Clear existing flights before adding new ones
             var generatedFlights = new List<Flight>();
-            var now = DateTime.UtcNow;
+            var now = DateTime.UtcNow; // Reference time for calculations
 
+            // Keep definitions for generating flight details
             var destinations = new List<string> {
                 "London", "Paris", "New York", "Tokyo", "Dubai", "Singapore",
                 "Frankfurt", "Amsterdam", "Los Angeles", "Chicago", "Rome", "Madrid"
@@ -37,114 +38,76 @@ namespace FlightDeck.Services
             Func<string> getRandomDestination = () => destinations[_random.Next(destinations.Count)];
             Func<string> getRandomGate = () => $"{(char)('A' + _random.Next(6))}{_random.Next(1, 21)}";
 
-            // --- Generate flights for specific statuses ---
-            int countPerStatus = 20;
+            // --- Generate 5 flights timed for specific status changes ---
 
-            // 1. Landed (Departed > 60 mins ago)
-            for (int i = 0; i < countPerStatus; i++)
+            // 1. ~10s: Scheduled -> Boarding (Threshold is +30 mins)
+            //    Set departure time slightly less than 30 mins from now.
+            var time1 = now.AddMinutes(30).AddSeconds(10);
+            generatedFlights.Add(new Flight { Id = Guid.NewGuid(), FlightNumber = getUniqueFlightNumber(), Destination = getRandomDestination(), DepartureTime = time1, Gate = getRandomGate() });
+            _logger.LogTrace("Added flight timed for Scheduled->Boarding at {Time} (in ~10s). Current Status: {Status}", time1, GetPotentialFlightStatus(time1, now));
+
+            // 2. ~20s: Boarding -> Departed (Threshold is +10 mins)
+            //    Set departure time slightly less than 10 mins from now.
+            var time2 = now.AddMinutes(10).AddSeconds(20);
+            generatedFlights.Add(new Flight { Id = Guid.NewGuid(), FlightNumber = getUniqueFlightNumber(), Destination = getRandomDestination(), DepartureTime = time2, Gate = getRandomGate() });
+            _logger.LogTrace("Added flight timed for Boarding->Departed at {Time} (in ~20s). Current Status: {Status}", time2, GetPotentialFlightStatus(time2, now));
+
+            // 3. ~30s: Departed -> Delayed (Threshold is -15 mins)
+            //    Set departure time slightly less than 15 mins *ago*.
+            //    At t=0, diff is just above -15m (Departed). At t=31s, diff drops below -15m (Delayed).
+            var time3 = now.AddMinutes(-15).AddSeconds(30);
+            generatedFlights.Add(new Flight { Id = Guid.NewGuid(), FlightNumber = getUniqueFlightNumber(), Destination = getRandomDestination(), DepartureTime = time3, Gate = getRandomGate() });
+            _logger.LogTrace("Added flight timed for Departed->Delayed at {Time} (in ~30s). Current Status: {Status}", time3, GetPotentialFlightStatus(time3, now));
+
+            // 4. ~40s: Delayed -> Landed (Threshold is -60 mins)
+            //    Set departure time slightly less than 60 mins *ago*.
+            //    At t=0, diff is just above -60m (Delayed). At t=41s, diff drops below -60m (Landed).
+            var time4 = now.AddMinutes(-60).AddSeconds(40);
+            generatedFlights.Add(new Flight { Id = Guid.NewGuid(), FlightNumber = getUniqueFlightNumber(), Destination = getRandomDestination(), DepartureTime = time4, Gate = getRandomGate() });
+            _logger.LogTrace("Added flight timed for Delayed->Landed at {Time} (in ~40s). Current Status: {Status}", time4, GetPotentialFlightStatus(time4, now));
+
+            // 5. ~50s: Another Boarding -> Departed (Threshold is +10 mins)
+            //    Set departure time slightly less than 10 mins from now.
+            var time5 = now.AddMinutes(10).AddSeconds(50);
+            generatedFlights.Add(new Flight { Id = Guid.NewGuid(), FlightNumber = getUniqueFlightNumber(), Destination = getRandomDestination(), DepartureTime = time5, Gate = getRandomGate() });
+            _logger.LogTrace("Added flight timed for Boarding->Departed at {Time} (in ~50s). Current Status: {Status}", time5, GetPotentialFlightStatus(time5, now));
+
+
+            // --- No need to fill remaining flights ---
+
+            // Shuffle the list (optional, but keeps it less predictable if order matters elsewhere)
+            // generatedFlights = generatedFlights.OrderBy(f => _random.Next()).ToList(); // Can be commented out if order doesn't matter
+
+            // Add all 5 flights to dictionary
+            foreach (var flight in generatedFlights)
             {
-                var departureTime = now.AddMinutes(_random.Next(-180, -61)); // e.g., 1-3 hours ago
-                generatedFlights.Add(new Flight { Id = Guid.NewGuid(), FlightNumber = getUniqueFlightNumber(), Destination = getRandomDestination(), DepartureTime = departureTime, Gate = getRandomGate() });
-            }
-
-            // 2. Delayed (Departed 15-60 mins ago)
-            for (int i = 0; i < countPerStatus; i++)
-            {
-                var departureTime = now.AddMinutes(_random.Next(-60, -15));
-                generatedFlights.Add(new Flight { Id = Guid.NewGuid(), FlightNumber = getUniqueFlightNumber(), Destination = getRandomDestination(), DepartureTime = departureTime, Gate = getRandomGate() });
-            }
-
-            // 3. Departed (Departed 0-15 mins ago)
-            for (int i = 0; i < countPerStatus; i++)
-            {
-                var departureTime = now.AddMinutes(_random.Next(-15, 0));
-                generatedFlights.Add(new Flight { Id = Guid.NewGuid(), FlightNumber = getUniqueFlightNumber(), Destination = getRandomDestination(), DepartureTime = departureTime, Gate = getRandomGate() });
-            }
-
-            // 4. Boarding (Departing in 11-30 mins)
-            for (int i = 0; i < countPerStatus; i++)
-            {
-                var departureTime = now.AddMinutes(_random.Next(11, 31));
-                generatedFlights.Add(new Flight { Id = Guid.NewGuid(), FlightNumber = getUniqueFlightNumber(), Destination = getRandomDestination(), DepartureTime = departureTime, Gate = getRandomGate() });
-            }
-
-            // 5. Scheduled (Departing > 30 mins from now)
-            for (int i = 0; i < countPerStatus; i++)
-            {
-                var departureTime = now.AddMinutes(_random.Next(31, 180)); // e.g., 31 mins to 3 hours away
-                generatedFlights.Add(new Flight { Id = Guid.NewGuid(), FlightNumber = getUniqueFlightNumber(), Destination = getRandomDestination(), DepartureTime = departureTime, Gate = getRandomGate() });
-            }
-
-
-            // --- Generate flights near status transitions (approx 1-4 min away) ---
-            int countPerTransition = 5; // 5 * 4 transitions = 20 flights
-
-            // A. About to become Boarding (Currently Scheduled)
-            for (int i = 0; i < countPerTransition; i++)
-            {
-                var departureTime = now.AddMinutes(30 + (_random.NextDouble() * 3 + 1)); // 31-34 mins away
-                generatedFlights.Add(new Flight { Id = Guid.NewGuid(), FlightNumber = getUniqueFlightNumber(), Destination = getRandomDestination(), DepartureTime = departureTime, Gate = getRandomGate() });
-            }
-
-            // B. About to become Departed (Currently Boarding)
-            for (int i = 0; i < countPerTransition; i++)
-            {
-                var departureTime = now.AddMinutes(10 + (_random.NextDouble() * 3 + 1)); // 11-14 mins away
-                generatedFlights.Add(new Flight { Id = Guid.NewGuid(), FlightNumber = getUniqueFlightNumber(), Destination = getRandomDestination(), DepartureTime = departureTime, Gate = getRandomGate() });
-            }
-
-            // C. About to become Delayed (Currently Departed)
-            for (int i = 0; i < countPerTransition; i++)
-            {
-                var departureTime = now.AddMinutes(-15 + (_random.NextDouble() * 3 + 1)); // -14 to -11 mins ago
-                generatedFlights.Add(new Flight { Id = Guid.NewGuid(), FlightNumber = getUniqueFlightNumber(), Destination = getRandomDestination(), DepartureTime = departureTime, Gate = getRandomGate() });
-            }
-
-            // D. About to become Landed (Currently Delayed)
-            for (int i = 0; i < countPerTransition; i++)
-            {
-                var departureTime = now.AddMinutes(-60 + (_random.NextDouble() * 3 + 1)); // -59 to -56 mins ago
-                generatedFlights.Add(new Flight { Id = Guid.NewGuid(), FlightNumber = getUniqueFlightNumber(), Destination = getRandomDestination(), DepartureTime = departureTime, Gate = getRandomGate() });
-            }
-
-            int remainingFlights = totalNumberOfFlights - generatedFlights.Count;
-            if (remainingFlights > 0)
-            {
-                _logger.LogDebug("Generating {Count} additional random flights to meet total.", remainingFlights);
-                for (int i = 0; i < remainingFlights; i++)
+                if (!_flights.TryAdd(flight.Id, flight))
                 {
-                    // Add more flights, perhaps skewing towards future departures
-                    var departureTime = now.AddMinutes(_random.Next(5, 240)); // 5 mins to 4 hours away
-                    generatedFlights.Add(new Flight { Id = Guid.NewGuid(), FlightNumber = getUniqueFlightNumber(), Destination = getRandomDestination(), DepartureTime = departureTime, Gate = getRandomGate() });
+                    // Log warning if add fails, though unlikely with cleared dictionary and new Guids
+                    _logger.LogWarning("Failed to add flight {FlightNumber} ({Id}) during initial dummy data load.", flight.FlightNumber, flight.Id);
                 }
             }
 
-            // Shuffle the list before adding to dictionary for less predictable order
-            generatedFlights = generatedFlights.OrderBy(f => _random.Next()).ToList();
-
-            // Add all generated flights to the concurrent dictionary
-            foreach (var flight in generatedFlights)
-            {
-                _flights.TryAdd(flight.Id, flight);
-            }
-
-            _logger.LogInformation("Added {Count} dummy flights ({ActualCount} actual) to in-memory repository.", totalNumberOfFlights, _flights.Count);
-
-            // Log status distribution for verification
-            LogStatusDistribution(now);
+            _logger.LogInformation("Added exactly {Count} dummy flights to in-memory repository, timed for status changes.", _flights.Count);
+            LogStatusDistribution(now); // Log initial distribution
         }
 
+        // Helper to log distribution (optional) - NO CHANGE HERE
         private void LogStatusDistribution(DateTime referenceTime)
         {
+            if (!_flights.Any()) return; // Avoid division by zero or logging empty status
+
             var statusCounts = _flights.Values
                 .Select(f => GetPotentialFlightStatus(f.DepartureTime, referenceTime))
                 .GroupBy(status => status)
                 .ToDictionary(g => g.Key, g => g.Count());
 
-            _logger.LogDebug("Generated Flight Status Distribution:");
-            foreach (var kvp in statusCounts.OrderBy(kvp => kvp.Key))
+            _logger.LogDebug("Initial Flight Status Distribution ({Total} flights):", _flights.Count);
+            // Ensure all potential statuses are logged, even if count is 0
+            var allStatuses = new[] { "Scheduled", "Boarding", "Departed", "Delayed", "Landed" };
+            foreach (var status in allStatuses.OrderBy(s => s))
             {
-                _logger.LogDebug("- {Status}: {Count}", kvp.Key, kvp.Value);
+                _logger.LogDebug("- {Status}: {Count}", status, statusCounts.TryGetValue(status, out var count) ? count : 0);
             }
         }
 
